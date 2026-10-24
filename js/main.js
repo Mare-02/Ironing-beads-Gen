@@ -1517,3 +1517,8 @@ async function init() {
 }
 
 init();
+
+// Offline-Nutzung als App auf dem Home-Bildschirm
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => { /* ohne Offline-Modus weiter */ });
+}

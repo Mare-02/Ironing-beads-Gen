@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Motiv bleibt innerhalb der sicheren Zone (80 %), damit es auch als „maskable“ Icon passt -->
+  <rect width="512" height="512" fill="#faf6f0"/>
+  <g stroke="#2b2622" stroke-opacity="0.18" stroke-width="5">
+    <circle cx="186" cy="186" r="64" fill="#e8604c"/>
+    <circle cx="326" cy="186" r="64" fill="#f0b901"/>
+    <circle cx="186" cy="326" r="64" fill="#3fa0d8"/>
+    <circle cx="326" cy="326" r="64" fill="#49ae89"/>
+  </g>
+  <g fill="#faf6f0">
+    <circle cx="186" cy="186" r="21"/>
+    <circle cx="326" cy="186" r="21"/>
+    <circle cx="186" cy="326" r="21"/>
+    <circle cx="326" cy="326" r="21"/>
+  </g>
+</svg>

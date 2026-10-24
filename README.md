@@ -23,7 +23,16 @@ Dann <http://localhost:8080> öffnen. (Direktes Öffnen der `index.html` per Dop
 
 ## Online stellen
 
-Über GitHub Pages: Repository → Settings → Pages → „Deploy from a branch“, Branch `main`, Ordner `/ (root)`.
+Über GitHub Pages: Repository → Settings → Pages → „Deploy from a branch“, Branch `main`, Ordner `/ (root)`. Danach erreichbar unter <https://mare-02.github.io/Ironing-beads-Gen/>.
+
+## Als App nutzen
+
+Die Seite lässt sich wie eine App installieren (Icon, eigener Name, ohne Browserleiste) und funktioniert danach auch ohne Internet:
+
+- **iPhone/iPad (Safari):** Teilen-Knopf → „Zum Home-Bildschirm“
+- **Android (Chrome):** Menü ⋮ → „App installieren“ bzw. „Zum Startbildschirm hinzufügen“
+
+Updates kommen automatisch: Online lädt die App immer die neueste Version, offline die zuletzt gespeicherte (`sw.js`). Wird eine Datei hinzugefügt, gehört sie in die `SHELL`-Liste in `sw.js`.
 
 ## Tests
 
