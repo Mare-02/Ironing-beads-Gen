@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#faf6f0">
+  <title>Perlenwerk</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="#e8604c"/><circle cx="23" cy="9" r="6" fill="#f0b901"/><circle cx="9" cy="23" r="6" fill="#3fa0d8"/><circle cx="23" cy="23" r="6" fill="#49ae89"/><circle cx="9" cy="9" r="2" fill="#fff"/><circle cx="23" cy="9" r="2" fill="#fff"/><circle cx="9" cy="23" r="2" fill="#fff"/><circle cx="23" cy="23" r="2" fill="#fff"/></svg>
+      <span>Perlenwerk</span>
+    </div>
+    <nav class="steps" aria-label="Schritte">
+      <button data-step="colors"><b>1</b> Farben</button>
+      <button data-step="image"><b>2</b> Bild</button>
+      <button data-step="pattern"><b>3</b> Vorlage</button>
+      <button data-step="build"><b>4</b> Bauen</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 1 · Farben -->
+    <section id="step-colors" class="step" hidden>
+      <div class="intro">
+        <h1>Deine Perlenfarben</h1>
+        <p>Hake an, welche Hama-Midi-Farben du zu Hause hast. Vorlagen werden nur aus diesen Farben gebaut.</p>
+      </div>
+      <div class="bar">
+        <span id="owned-count" class="pill"></span>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="all-on">Alle</button>
+        <button class="btn ghost" id="all-off">Keine</button>
+      </div>
+      <div id="color-list" class="color-list"></div>
+      <p class="hint">Die Farbtöne am Bildschirm sind Näherungen. Tippe auf einen Farbtupfer, um ihn an deine echten Perlen anzupassen – dann wird die Vorlage genauer.</p>
+
+      <div class="card-row">
+        <details class="card">
+          <summary>Eigene Farbe hinzufügen</summary>
+          <form id="custom-form" class="custom-form">
+            <label class="field"><span>Farbe</span><input type="color" id="custom-hex" value="#8a5cf6"></label>
+            <label class="field grow"><span>Name</span><input type="text" id="custom-name" placeholder="z. B. Glitzer-Lila" maxlength="30"></label>
+            <button class="btn" type="submit">Hinzufügen</button>
+          </form>
+        </details>
+        <details class="card">
+          <summary>Farben sichern oder übertragen</summary>
+          <p class="muted">Deine Auswahl wird automatisch in diesem Browser gespeichert. Als Datei kannst du sie auf ein anderes Gerät mitnehmen.</p>
+          <div class="bar">
+            <button class="btn ghost" id="export-colors">Als Datei speichern</button>
+            <label class="btn ghost file-btn">Datei laden<input type="file" id="import-colors" accept="application/json,.json"></label>
+          </div>
+        </details>
+      </div>
+      <div class="next"><button class="btn primary" data-go="image">Weiter zum Bild →</button></div>
+    </section>
+
+    <!-- 2 · Bild -->
+    <section id="step-image" class="step" hidden>
+      <div class="intro">
+        <h1>Bild &amp; Bauplatten</h1>
+        <p>Wähle deine Bauflächen-Größe und ein Bild. Die Vorlage wird so berechnet, dass sie garantiert auf deine Platten passt.</p>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h2>Bauplatten <small>(je 29 × 29 Stifte)</small></h2>
+          <div class="board-config">
+            <div class="stepper">
+              <span>Nebeneinander</span>
+              <div><button class="round" data-board="px" data-delta="-1" aria-label="weniger">−</button><output id="bx">1</output><button class="round" data-board="px" data-delta="1" aria-label="mehr">+</button></div>
+            </div>
+            <div class="stepper">
+              <span>Untereinander</span>
+              <div><button class="round" data-board="py" data-delta="-1" aria-label="weniger">−</button><output id="by">1</output><button class="round" data-board="py" data-delta="1" aria-label="mehr">+</button></div>
+            </div>
+            <div id="plate-map" class="plate-map" aria-hidden="true"></div>
+          </div>
+          <p class="muted" id="board-size"></p>
+        </div>
+
+        <div class="card">
+          <h2>Bild</h2>
+          <div class="seg mode-seg" role="group" aria-label="Art des Bildes">
+            <button data-mode="photo">Foto / Bild</button>
+            <button data-mode="chart">Fertige Vorlage</button>
+          </div>
+          <p class="muted" id="mode-hint"></p>
+          <label class="upload">
+            <input type="file" id="file" accept="image/*">
+            <span class="upload-icon">＋</span>
+            <span id="upload-label">Bild auswählen oder Foto machen</span>
+          </label>
+          <div id="crop-area" hidden>
+            <div id="crop-wrap" class="crop-wrap"><canvas id="crop-canvas"></canvas></div>
+            <p class="muted" id="crop-hint"></p>
+            <div class="bar">
+              <button class="btn ghost photo-only" id="fit-motif">Rand automatisch abschneiden</button>
+              <button class="btn ghost" id="reset-crop">Ganzes Bild</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" id="settings-card" hidden>
+        <h2>Einstellungen</h2>
+        <div class="settings">
+          <div class="chart-fields chart-only">
+            <label class="field"><span>Perlen breit</span><input type="number" id="chart-cols" min="1" max="174" inputmode="numeric"></label>
+            <label class="field"><span>Perlen hoch</span><input type="number" id="chart-rows" min="1" max="174" inputmode="numeric"></label>
+            <button class="btn ghost" id="chart-detect">Raster erkennen</button>
+          </div>
+          <label class="field photo-only">
+            <span>Größe <b id="size-out"></b></span>
+            <input type="range" id="width" min="4" max="29" step="1">
+          </label>
+          <label class="check">
+            <input type="checkbox" id="autobg">
+            <span><b>Hintergrund entfernen</b><br><small>Fläche in der Randfarbe wird nicht gesteckt</small></span>
+          </label>
+          <label class="field" id="bgtol-field">
+            <span>Wie ähnlich muss der Hintergrund sein? <b id="bgtol-out"></b></span>
+            <input type="range" id="bgtol" min="3" max="40" step="1">
+          </label>
+          <label class="field photo-only">
+            <span>Höchstens so viele Farben</span>
+            <select id="maxcolors"></select>
+          </label>
+          <label class="check photo-only">
+            <input type="checkbox" id="smooth">
+            <span><b>Einzelne Ausreißer glätten</b><br><small>Einzelperlen in anderer Farbe werden angeglichen</small></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="card" id="preview-card" hidden>
+        <h2>Vorschau</h2>
+        <div id="preview-wrap" class="preview-wrap"><canvas id="preview-canvas"></canvas></div>
+        <p class="muted" id="preview-info"></p>
+      </div>
+      <div class="next"><button class="btn primary" data-go="pattern" id="to-pattern" disabled>Weiter zur Vorlage →</button></div>
+    </section>
+
+    <!-- 3 · Vorlage -->
+    <section id="step-pattern" class="step" hidden>
+      <div class="intro">
+        <h1>Vorlage bearbeiten</h1>
+        <p>Lösche Perlen, die du nicht willst, oder male Farben nach. Rot umrandete Perlen hängen nicht am Hauptstück.</p>
+      </div>
+      <div id="pattern-empty" class="empty card" hidden>
+        <p>Noch keine Vorlage. Wähle zuerst ein Bild aus.</p>
+        <button class="btn primary" data-go="image">Zum Bild</button>
+      </div>
+      <div id="pattern-main" hidden>
+        <div id="stale" class="notice" hidden></div>
+        <div id="connect-status" class="status"></div>
+
+        <div class="toolbar" role="toolbar" aria-label="Werkzeuge">
+          <div class="seg">
+            <button data-tool="hand" title="Ansehen und scrollen">✋<span>Ansehen</span></button>
+            <button data-tool="erase" title="Einzelne Perlen löschen">⌫<span>Radierer</span></button>
+            <button data-tool="wand" title="Zusammenhängende Fläche einer Farbe löschen">✦<span>Fläche löschen</span></button>
+            <button data-tool="pen" title="Perlen setzen">✎<span>Stift</span></button>
+            <button data-tool="pick" title="Farbe aus der Vorlage aufnehmen">◉<span>Pipette</span></button>
+          </div>
+          <div class="seg small">
+            <button id="undo" title="Rückgängig">↶</button>
+            <button id="redo" title="Wiederholen">↷</button>
+          </div>
+          <div class="seg small">
+            <button id="zoom-out" title="Verkleinern">−</button>
+            <button id="zoom-in" title="Vergrößern">+</button>
+          </div>
+        </div>
+        <div id="pen-colors" class="pen-colors" hidden></div>
+
+        <div id="board-wrap" class="board-wrap"><canvas id="board-canvas"></canvas></div>
+
+        <div class="grid-2 below">
+          <div class="card">
+            <h2>Position auf der Platte</h2>
+            <div class="mover">
+              <button class="round" data-move="0,-1" aria-label="nach oben">↑</button>
+              <button class="round" data-move="-1,0" aria-label="nach links">←</button>
+              <button class="btn ghost" id="center">Mittig</button>
+              <button class="round" data-move="1,0" aria-label="nach rechts">→</button>
+              <button class="round" data-move="0,1" aria-label="nach unten">↓</button>
+            </div>
+            <p class="muted" id="margins"></p>
+          </div>
+          <div class="card">
+            <h2>Perlen &amp; Farben <small id="bead-total"></small></h2>
+            <div id="legend" class="legend"></div>
+            <p class="muted">Tippe auf eine Farbe, um nur diese hervorzuheben.</p>
+          </div>
+        </div>
+        <div class="next">
+          <button class="btn ghost" id="export-png">Als Bild speichern</button>
+          <button class="btn primary" data-go="build">Los geht's – Bauen →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 · Bauen -->
+    <section id="step-build" class="step" hidden>
+      <div id="build-empty" class="empty card" hidden>
+        <p>Noch keine Vorlage zum Bauen.</p>
+        <button class="btn primary" data-go="image">Zum Bild</button>
+      </div>
+      <div id="build-main" hidden>
+        <div id="build-warning" class="status warn" hidden></div>
+        <div class="start-card" id="start-card"></div>
+        <div class="grid-build">
+          <div>
+            <div id="plate-picker-card" class="card" hidden>
+              <h2>Platte wählen</h2>
+              <p class="muted">Leg deine Platten genau so hin wie hier gezeigt.</p>
+              <div id="plate-picker" class="plate-picker"></div>
+            </div>
+            <div class="card">
+              <div class="row-nav">
+                <button class="round" id="row-prev" aria-label="vorherige Reihe">↑</button>
+                <div class="row-title"><span id="row-plate"></span><strong id="row-label"></strong></div>
+                <button class="round" id="row-next" aria-label="nächste Reihe">↓</button>
+              </div>
+              <ol id="row-runs" class="row-runs"></ol>
+              <button class="btn primary wide" id="row-done"></button>
+              <p class="muted small" id="progress"></p>
+            </div>
+          </div>
+          <div class="card plate-card">
+            <div id="plate-wrap" class="plate-wrap"><canvas id="plate-canvas"></canvas></div>
+            <p class="muted small">Tippe auf eine Reihe, um sie auszuwählen. Zahlen oben = Stift von links, links = Reihe von oben. Grüner Ring = allererste Perle.</p>
+          </div>
+        </div>
+
+        <div class="card" id="check-card">
+          <h2>Fortschritt prüfen</h2>
+          <p class="muted" id="check-intro"></p>
+          <label class="upload">
+            <input type="file" id="check-file" accept="image/*" capture="environment">
+            <span class="upload-icon">📷</span>
+            <span id="check-upload-label">Foto von der Platte machen</span>
+          </label>
+          <div id="check-area" hidden>
+            <p class="check-step" id="check-step"></p>
+            <div id="check-wrap" class="crop-wrap"><canvas id="check-canvas"></canvas></div>
+            <div class="bar">
+              <button class="btn ghost" id="check-reset">Ecken neu setzen</button>
+              <button class="btn primary" id="check-run" disabled>Prüfen</button>
+            </div>
+          </div>
+          <div id="check-result"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

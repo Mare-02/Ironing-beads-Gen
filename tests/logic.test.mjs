@@ -1,0 +1,127 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import * as G from '../js/grid.js';
+import { buildPattern, period } from '../js/convert.js';
+
+test('Rasterweite einer Vorlage wird aus dem Kantenprofil erkannt', () => {
+  // Rasterlinie alle 12.5 px, dazu etwas Rauschen von aufgedruckten Nummern
+  const profile = Array.from({ length: 500 }, (_, x) => (Math.abs(((x + 3) % 12.5) - 0) < 1 ? 100 : 0) + ((x * 7919) % 13));
+  const p = period(profile);
+  assert.ok(Math.abs(p - 12.5) < 0.6, `bekam ${p}`);
+});
+import { rgbToLab, deltaE00, hexToRgb } from '../js/color.js';
+import { homography, project, compare } from '../js/check.js';
+
+test('Homographie bildet die 4 Ecken und die Mitte eines Vierecks ab', () => {
+  const src = [[0, 0], [28, 0], [28, 28], [0, 28]];
+  const dst = [[100, 50], [400, 80], [380, 390], [90, 360]];
+  const h = homography(src, dst);
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = project(h, ...src[i]);
+    assert.ok(Math.hypot(x - dst[i][0], y - dst[i][1]) < 1e-6);
+  }
+});
+
+test('Fortschritts-Vergleich erkennt falsche Farbe, Perle zu viel und fehlende', () => {
+  const lab = (hex) => rgbToLab(...hexToRgb(hex));
+  const colors = [
+    { code: '05', lab: lab('#B63136') },
+    { code: '09', lab: lab('#305CB0') },
+    { code: '03', lab: lab('#F0B901') },
+  ];
+  const plate = lab('#D8D8D8');
+  // 10 leere Stifte für die Plattenfarbe, dann: richtig, falsch, fehlt, zu viel
+  const expected = [...Array(10).fill(null), '05', '05', '09', null];
+  const samples = [...Array(10).fill(plate), lab('#B83338'), lab('#F0B901'), plate, lab('#305CB0')];
+  const { cells } = compare(samples, expected, colors);
+  assert.deepEqual(cells.slice(10).map((c) => c.status), ['ok', 'wrong', 'missing', 'extra']);
+  assert.equal(cells[11].seen, '03');
+});
+
+const _ = null;
+
+test('Perlen, die nur diagonal anliegen, gelten als lose', () => {
+  const grid = [
+    'A', 'A', _,
+    _, _, 'B',
+    _, _, 'B',
+  ];
+  const con = G.connectivity(grid, 3, 3);
+  assert.equal(con.total, 4);
+  assert.equal(con.loose.length, 1);
+  assert.equal(con.looseCount, 2);
+});
+
+test('Seitlich verbundene Perlen bilden ein Stück, Löcher sind erlaubt', () => {
+  const grid = [
+    'A', 'A', 'A',
+    'A', _, 'B',
+    'A', 'A', 'B',
+  ];
+  assert.equal(G.connectivity(grid, 3, 3).loose.length, 0);
+});
+
+test('place zentriert das zugeschnittene Motiv und lehnt zu große ab', () => {
+  const src = [_, _, _, _, 'A', 'A', _, _, _];
+  const out = G.place(src, 3, 3, 4, 3);
+  assert.deepEqual(out, [_, _, _, _, _, 'A', 'A', _, _, _, _, _]);
+  assert.equal(G.place(['A', 'A', 'A'], 3, 1, 2, 2), null);
+});
+
+test('shift verweigert Verschieben über den Rand', () => {
+  const grid = ['A', _, _, _];
+  assert.equal(G.shift(grid, 2, 2, -1, 0), null);
+  assert.deepEqual(G.shift(grid, 2, 2, 1, 1), [_, _, _, 'A']);
+});
+
+test('Startperle ist die erste in Leserichtung', () => {
+  assert.equal(G.firstFilled([_, _, _, 'A', 'B', _]), 3);
+});
+
+test('rowRuns fasst gleiche Farben zusammen und überspringt Lücken', () => {
+  const grid = ['A', 'A', _, 'A', 'B'];
+  assert.deepEqual(G.rowRuns(grid, 5, 0, 0, 4), [
+    { code: 'A', from: 0, to: 1 },
+    { code: 'A', from: 3, to: 3 },
+    { code: 'B', from: 4, to: 4 },
+  ]);
+});
+
+test('floodSame löscht nur die zusammenhängende Fläche gleicher Farbe', () => {
+  const grid = ['A', 'A', 'B', 'A'];
+  assert.deepEqual(G.floodSame(grid, 4, 1, 0).sort(), [0, 1]);
+});
+
+test('CIEDE2000 stimmt mit Referenzwert überein', () => {
+  // Sharma et al., Testpaar 1
+  const d = deltaE00([50, 2.6772, -79.7751], [50, 0, -82.7485]);
+  assert.ok(Math.abs(d - 2.0425) < 1e-3, `bekam ${d}`);
+});
+
+test('Hintergrund am Rand wird entfernt, Motiv bleibt in nächster Farbe', () => {
+  const W = 5, H = 5;
+  const cells = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const inside = x >= 1 && x <= 3 && y >= 1 && y <= 3;
+      cells.push(inside ? { r: 200, g: 30, b: 40, a: 1 } : { r: 250, g: 250, b: 250, a: 1 });
+    }
+  }
+  const colors = [
+    { code: '01', lab: rgbToLab(...hexToRgb('#ECEDED')) },
+    { code: '05', lab: rgbToLab(...hexToRgb('#B63136')) },
+  ];
+  const out = buildPattern(cells, W, H, colors, { autoBg: true, bgTol: 12, maxColors: 0, smooth: false });
+  assert.equal(out.filter((c) => c === null).length, 16);
+  assert.equal(out.filter((c) => c === '05').length, 9);
+});
+
+test('maxColors reduziert auf die gewünschte Anzahl', () => {
+  const cells = [
+    { r: 255, g: 255, b: 255, a: 1 }, { r: 250, g: 250, b: 250, a: 1 },
+    { r: 0, g: 0, b: 0, a: 1 }, { r: 200, g: 30, b: 40, a: 1 },
+  ];
+  const colors = ['#ECEDED', '#2E2F32', '#B63136'].map((h, i) => ({ code: String(i), lab: rgbToLab(...hexToRgb(h)) }));
+  const out = buildPattern(cells, 4, 1, colors, { autoBg: false, maxColors: 2, smooth: false });
+  assert.equal(new Set(out).size, 2);
+});
