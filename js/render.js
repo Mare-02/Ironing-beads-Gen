@@ -54,12 +54,18 @@ export function drawBoard(canvas, o) {
         continue;
       }
       const hex = colors.get(code)?.hex ?? '#999999';
-      const dim = (highlight && code !== highlight) || rowDim || rowDone;
-      ctx.globalAlpha = dim ? (rowDone && !rowDim ? 0.35 : 0.2) : 1;
+      // Beim Bauen bleibt das Motiv erkennbar, nur die aktuelle Reihe ist kräftig
+      const colorDim = highlight && code !== highlight;
+      ctx.globalAlpha = colorDim ? 0.2 : rowDim ? 0.45 : rowDone ? 0.55 : 1;
       ctx.fillStyle = hex;
       ctx.beginPath();
       ctx.arc(cx, cy, r, 0, Math.PI * 2);
       ctx.fill();
+      // Dunkler Rand, damit Weiß und Creme sich von der hellen Platte abheben
+      ctx.strokeStyle = 'rgba(40, 30, 20, 0.35)';
+      ctx.lineWidth = Math.max(0.75, cell * 0.06);
+      ctx.stroke();
+      const dim = colorDim || rowDim || rowDone;
       if (showCodes && cell >= 18 && !dim) {
         ctx.fillStyle = textColorFor(hex);
         ctx.font = `600 ${fontPx}px system-ui, sans-serif`;

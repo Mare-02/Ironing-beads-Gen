@@ -1,7 +1,55 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as G from '../js/grid.js';
-import { buildPattern, period, findGrid } from '../js/convert.js';
+import { buildPattern, period, findGrid, patternFromPixels } from '../js/convert.js';
+
+// RGBA-Pixel für w×h Felder à S Pixel aus einer Funktion (px, py) -> [r, g, b]
+function pixels(w, h, S, fn) {
+  const data = new Uint8ClampedArray(w * S * h * S * 4);
+  for (let py = 0; py < h * S; py++) {
+    for (let px = 0; px < w * S; px++) {
+      const p = (py * w * S + px) * 4;
+      [data[p], data[p + 1], data[p + 2]] = fn(px, py);
+      data[p + 3] = 255;
+    }
+  }
+  return data;
+}
+
+test('Felder an Farbkanten bekommen die Mehrheitsfarbe statt einer Mischfarbe', () => {
+  const lab = (hex) => rgbToLab(...hexToRgb(hex));
+  const colors = [
+    { code: '17', lab: lab('#83888A') },
+    { code: '02', lab: lab('#F0E8B9') },
+    { code: '21', lab: lab('#A5693F') }, // läge farblich zwischen Grau und Creme
+  ];
+  // 1 Feld, 10 px breit: 6 Spalten Grau, 4 Spalten Creme
+  const data = pixels(1, 1, 10, (px) => (px < 6 ? [131, 136, 138] : [240, 232, 185]));
+  const out = patternFromPixels(data, 1, 1, 10, colors, { autoBg: false, maxColors: 0, smooth: false });
+  assert.deepEqual(out, ['17']);
+});
+
+test('Heller Bauch innerhalb eines Umrisses bleibt trotz weißem Hintergrund erhalten', () => {
+  const lab = (hex) => rgbToLab(...hexToRgb(hex));
+  const colors = [
+    { code: '01', lab: lab('#ECEDED') },
+    { code: '02', lab: lab('#F0E8B9') },
+    { code: '18', lab: lab('#2E2F32') },
+  ];
+  // 7×7 Felder à 4 px: weißer Hintergrund mit grauem 1-px-Bildrahmen,
+  // dünner schwarzer Ring (1 px), innen Creme
+  const S = 4, c = 14, data = pixels(7, 7, S, (px, py) => {
+    if (px === 0 || py === 0 || px === 27 || py === 27) return [190, 190, 190];
+    const d = Math.hypot(px - c, py - c);
+    if (d < 9) return [240, 232, 185];
+    if (d < 10) return [30, 30, 30];
+    return [255, 255, 255];
+  });
+  const out = patternFromPixels(data, 7, 7, S, colors, { autoBg: true, bgTol: 12, maxColors: 0, smooth: false });
+  assert.equal(out[3 * 7 + 3], '02', 'Mitte ist Creme');
+  assert.equal(out[0], null, 'Ecke ist Hintergrund');
+  assert.ok(!out.includes('01'), 'keine weißen Perlen aus dem Hintergrund');
+});
 
 test('findGrid findet Lage und Anzahl der Felder trotz Schrift am Rand', () => {
   // 20 Felder à 12.5 px ab x = 40, Linien um ±1 px versetzt wie in verkleinerten Bildern,

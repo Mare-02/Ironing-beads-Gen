@@ -1,32 +1,125 @@
 import { rgbToLab, deltaE00 } from './color.js';
 
-// Bildausschnitt (crop in 0–1 Bildkoordinaten) auf w×h Zellen herunterrechnen.
-// Jede Zelle ist der alphagewichtete Mittelwert ihres Blocks.
-export function sampleImage(img, crop, w, h) {
-  const S = Math.max(1, Math.min(8, Math.floor(1600 / Math.max(w, h))));
-  const data = cropCanvas(img, crop, w * S, h * S);
+// Bild/Foto -> Raster aus Farbcodes (crop in 0–1 Bildkoordinaten).
+export function imageToPattern(img, crop, w, h, colors, opts) {
+  const S = Math.max(1, Math.min(24, Math.floor(1600 / Math.max(w, h))));
+  return patternFromPixels(cropCanvas(img, crop, w * S, h * S), w, h, S, colors, opts);
+}
 
-  const cells = new Array(w * h);
-  const rowLen = w * S * 4;
+// Jedes Feld (S×S Pixel) bekommt die Perlenfarbe, die die meisten seiner Pixel haben –
+// ein Durchschnitt würde an Kanten Mischfarben erzeugen, die im Bild gar nicht vorkommen.
+// Der Hintergrund wird pixelgenau vom Rand aus entfernt, so halten ihn auch dünne Umrisse auf.
+// Ein Feld wird nur gesteckt, wenn mindestens die Hälfte seiner Pixel zum Motiv gehört.
+export function patternFromPixels(data, w, h, S, colors, opts) {
+  const PW = w * S, PH = h * S;
+  const labCache = new Map(), codeCache = new Map();
+  // 5 Bit je Kanal reichen für die Farbzuordnung und halten den Cache klein
+  const keyOf = (i) => ((data[i * 4] >> 3) << 10) | ((data[i * 4 + 1] >> 3) << 5) | (data[i * 4 + 2] >> 3);
+  const labOf = (key) => {
+    let lab = labCache.get(key);
+    if (!lab) {
+      lab = rgbToLab(((key >> 10) & 31) * 8 + 4, ((key >> 5) & 31) * 8 + 4, (key & 31) * 8 + 4);
+      labCache.set(key, lab);
+    }
+    return lab;
+  };
+  const opaque = (i) => data[i * 4 + 3] >= 128;
+  const bg = opts.autoBg ? pixelBackground(data, PW, PH, opts.bgTol, keyOf, labOf) : null;
+
+  const out = new Array(w * h).fill(null);
+  const labs = new Array(w * h);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      let r = 0, g = 0, b = 0, a = 0;
+      const counts = new Map();
+      let fg = 0, L = 0, A = 0, B = 0;
       for (let dy = 0; dy < S; dy++) {
-        let p = (y * S + dy) * rowLen + x * S * 4;
-        for (let dx = 0; dx < S; dx++, p += 4) {
-          const al = data[p + 3] / 255;
-          r += data[p] * al;
-          g += data[p + 1] * al;
-          b += data[p + 2] * al;
-          a += al;
+        for (let dx = 0; dx < S; dx++) {
+          const i = (y * S + dy) * PW + x * S + dx;
+          if (!opaque(i) || bg?.[i]) continue;
+          const key = keyOf(i);
+          const lab = labOf(key);
+          let code = codeCache.get(key);
+          if (code === undefined) {
+            code = nearest(lab, colors);
+            codeCache.set(key, code);
+          }
+          counts.set(code, (counts.get(code) || 0) + 1);
+          fg++;
+          L += lab[0];
+          A += lab[1];
+          B += lab[2];
         }
       }
-      cells[y * w + x] = a > 0
-        ? { r: r / a, g: g / a, b: b / a, a: a / (S * S) }
-        : { r: 0, g: 0, b: 0, a: 0 };
+      const c = y * w + x;
+      labs[c] = fg ? [L / fg, A / fg, B / fg] : [0, 0, 0];
+      if (fg < S * S * 0.5) continue;
+      let best = null, bestN = -1;
+      for (const [code, k] of counts) if (k > bestN) { bestN = k; best = code; }
+      out[c] = best;
     }
   }
-  return cells;
+  if (opts.maxColors > 0) reduceColors(out, labs, colors, opts.maxColors);
+  if (opts.smooth) smooth(out, w, h);
+  return out;
+}
+
+// Hintergrund-Pixel: vom Rand aus zusammenhängend in der häufigsten Randfarbe
+function pixelBackground(data, PW, PH, tol, keyOf, labOf) {
+  const n = PW * PH;
+  const bg = new Uint8Array(n);
+  const opaque = (i) => data[i * 4 + 3] >= 128;
+  // Randstreifen statt nur der äußersten Pixelreihe – viele Bilder haben einen dünnen Rahmen
+  const band = Math.max(3, Math.round(Math.min(PW, PH) * 0.02));
+  const border = [];
+  for (let y = 0; y < PH; y++) {
+    for (let x = 0; x < PW; x++) {
+      if (x < band || y < band || x >= PW - band || y >= PH - band) border.push(y * PW + x);
+    }
+  }
+
+  // Häufigste Randfarbe grob zählen (4 Bit je Kanal), Bezug = deren mittleres Lab
+  const buckets = new Map();
+  let opaqueBorder = 0;
+  for (const i of border) {
+    if (!opaque(i)) continue;
+    opaqueBorder++;
+    const k = ((data[i * 4] >> 4) << 8) | ((data[i * 4 + 1] >> 4) << 4) | (data[i * 4 + 2] >> 4);
+    const b = buckets.get(k) || { n: 0, L: 0, A: 0, B: 0 };
+    const lab = labOf(keyOf(i));
+    b.n++;
+    b.L += lab[0];
+    b.A += lab[1];
+    b.B += lab[2];
+    buckets.set(k, b);
+  }
+  let top = null;
+  for (const b of buckets.values()) if (!top || b.n > top.n) top = b;
+  // Füllt das Motiv den Rand fast komplett aus, gibt es keinen Hintergrund zu entfernen
+  const useColor = top && top.n >= opaqueBorder * 0.2;
+  const ref = useColor ? [top.L / top.n, top.A / top.n, top.B / top.n] : null;
+  const isBg = (i) => {
+    if (!opaque(i)) return true;
+    if (!ref) return false;
+    const l = labOf(keyOf(i));
+    return Math.hypot(l[0] - ref[0], l[1] - ref[1], l[2] - ref[2]) < tol;
+  };
+
+  const seen = new Uint8Array(n);
+  const stack = new Int32Array(n);
+  let sp = 0;
+  for (const i of border) {
+    if (!seen[i] && isBg(i)) { seen[i] = 1; stack[sp++] = i; }
+  }
+  while (sp) {
+    const i = stack[--sp];
+    bg[i] = 1;
+    const x = i % PW;
+    if (x > 0 && !seen[i - 1] && isBg(i - 1)) { seen[i - 1] = 1; stack[sp++] = i - 1; }
+    if (x < PW - 1 && !seen[i + 1] && isBg(i + 1)) { seen[i + 1] = 1; stack[sp++] = i + 1; }
+    if (i >= PW && !seen[i - PW] && isBg(i - PW)) { seen[i - PW] = 1; stack[sp++] = i - PW; }
+    if (i < n - PW && !seen[i + PW] && isBg(i + PW)) { seen[i + PW] = 1; stack[sp++] = i + PW; }
+  }
+  return bg;
 }
 
 function cropCanvas(img, crop, cw, ch) {

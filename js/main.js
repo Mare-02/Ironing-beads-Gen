@@ -1,6 +1,6 @@
 import { HAMA_MIDI } from './palette.js';
 import { hexToRgb, rgbToLab } from './color.js';
-import { sampleImage, sampleChart, detectGrid, findChart, buildPattern } from './convert.js';
+import { imageToPattern, sampleChart, detectGrid, findChart, buildPattern } from './convert.js';
 import * as G from './grid.js';
 import { drawBoard } from './render.js';
 import { homography, project, compare, median } from './check.js';
@@ -28,6 +28,7 @@ const state = {
   edited: false,
   stale: false,
   tool: 'hand',
+  brush: 0, // Pinselradius für Radierer und Stift
   penCode: null,
   zoom: 1,
   highlight: null,
@@ -124,14 +125,16 @@ function updateOwnedCount() {
 function colorItem(c) {
   const el = document.createElement('div');
   el.className = 'color-item' + (c.owned ? ' owned' : '');
+  // Ganze Kachel = Auswahl; Farbton anpassen nur über den kleinen Stift-Knopf
   el.innerHTML = `
-    <label class="swatch" style="--c:${esc(c.hex)}" title="Farbton anpassen">
-      <input type="color" value="${esc(c.hex.toLowerCase())}" aria-label="Farbton für ${esc(c.name)} anpassen">
-    </label>
     <label class="color-check">
+      <span class="swatch" style="--c:${esc(c.hex)}"></span>
       <input type="checkbox" ${c.owned ? 'checked' : ''}>
       <span class="color-code">${esc(c.code)}</span>
       <span class="color-name">${esc(c.name)}</span>
+    </label>
+    <label class="tune" title="Farbton an deine Perle anpassen">
+      ✎<input type="color" value="${esc(c.hex.toLowerCase())}" aria-label="Farbton für ${esc(c.name)} anpassen">
     </label>
     ${c.custom ? '<button class="icon-btn" aria-label="Farbe löschen">×</button>' : ''}`;
   $('input[type=checkbox]', el).addEventListener('change', (e) => {
@@ -141,6 +144,7 @@ function colorItem(c) {
   });
   const picker = $('input[type=color]', el);
   picker.addEventListener('input', () => $('.swatch', el).style.setProperty('--c', picker.value));
+  picker.addEventListener('click', (e) => e.stopPropagation());
   picker.addEventListener('change', () => {
     c.hex = picker.value.toUpperCase();
     paletteChanged();
@@ -238,10 +242,10 @@ function generate() {
     toast(`Die Vorlage ist ${w} × ${h} Perlen groß – Baufläche auf ${state.board.px} × ${state.board.py} Platten vergrößert.`);
   }
   if (!chart) state.settings.width = w;
-  const cells = chart ? sampleChart(state.image, state.crop, w, h) : sampleImage(state.image, state.crop, w, h);
   const colors = owned.map((c) => ({ code: c.code, lab: rgbToLab(...hexToRgb(c.hex)) }));
-  const opts = chart ? { ...state.settings, maxColors: 0, smooth: false } : state.settings;
-  const pat = buildPattern(cells, w, h, colors, opts);
+  const pat = chart
+    ? buildPattern(sampleChart(state.image, state.crop, w, h), w, h, colors, { ...state.settings, maxColors: 0, smooth: false })
+    : imageToPattern(state.image, state.crop, w, h, colors, state.settings);
   const hadEdits = state.edited && state.grid;
   if (hadEdits) pushUndo();
   state.lastPattern = { pat, w, h };
@@ -740,6 +744,7 @@ function renderPattern() {
   $('#undo').disabled = !state.undo.length;
   $('#redo').disabled = !state.redo.length;
 
+  renderBrush();
   renderPenColors();
   const con = G.connectivity(state.grid, W(), H());
   drawPatternBoard(con);
@@ -821,6 +826,26 @@ function renderLegend() {
   }));
 }
 
+const TOOL_HINTS = {
+  hand: 'Ansehen: Wische, um durch die Vorlage zu scrollen. Wähle ein Werkzeug, um etwas zu ändern.',
+  erase: 'Radierer: Tippe auf Perlen oder wische darüber, um sie zu entfernen.',
+  wand: 'Fläche: Tippe auf eine Perle – alle zusammenhängenden Perlen in genau dieser Farbe verschwinden.',
+  pen: 'Stift: Wähle unten eine Farbe und tippe oder wische, um Perlen zu setzen.',
+  pick: 'Pipette: Tippe auf eine Perle, um ihre Farbe für den Stift zu übernehmen.',
+};
+
+function renderBrush() {
+  $('#tool-hint').textContent = TOOL_HINTS[state.tool];
+  const el = $('#brush');
+  el.hidden = state.tool !== 'erase' && state.tool !== 'pen';
+  $$('[data-brush]', el).forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.brush) === state.brush)));
+}
+
+$$('[data-brush]').forEach((b) => b.addEventListener('click', () => {
+  state.brush = Number(b.dataset.brush);
+  renderBrush();
+}));
+
 function renderPenColors() {
   const el = $('#pen-colors');
   el.hidden = state.tool !== 'pen';
@@ -891,9 +916,18 @@ let frame = 0;
 
 function paint(i) {
   if (i < 0) return;
-  const g = state.grid;
-  if (state.tool === 'erase' && g[i] !== null) { g[i] = null; stroke.changed = true; }
-  if (state.tool === 'pen' && state.penCode && g[i] !== state.penCode) { g[i] = state.penCode; stroke.changed = true; }
+  const g = state.grid, w = W(), h = H(), r = state.brush;
+  const cx = i % w, cy = Math.floor(i / w);
+  // Runder Pinsel: Radius 0 = eine Perle, 1 = 3×3, 2 = 5×5 ohne Ecken
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const x = cx + dx, y = cy + dy;
+      if (x < 0 || y < 0 || x >= w || y >= h || dx * dx + dy * dy > r * r + r) continue;
+      const j = y * w + x;
+      if (state.tool === 'erase' && g[j] !== null) { g[j] = null; stroke.changed = true; }
+      if (state.tool === 'pen' && state.penCode && g[j] !== state.penCode) { g[j] = state.penCode; stroke.changed = true; }
+    }
+  }
   if (stroke.changed && !frame) {
     frame = requestAnimationFrame(() => { frame = 0; drawPatternBoard(); });
   }
@@ -1259,6 +1293,24 @@ function drawCheck() {
     ctx.fillText(String(k + 1), x * s, y * s + 0.5);
   });
 
+  // Gefundene Fehler direkt im Foto einkreisen
+  const errors = state.check?.plate === state.plate ? state.check.errors : [];
+  const hm = pts.length === 4 && errors.length ? homography(GRID_CORNERS, pts) : null;
+  if (hm) {
+    for (const err of errors) {
+      const [x, y] = project(hm, err.c, err.r);
+      const [xn, yn] = project(hm, err.c + 1, err.r);
+      const rad = Math.max(9, Math.hypot(xn - x, yn - y) * s * 0.75);
+      for (const [color, width] of [['#ffffff', 6], ['#e0262f', 3]]) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        ctx.arc(x * s, y * s, rad, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
   $('#check-step').textContent = pts.length < 4
     ? `${pts.length + 1}/4 · Tippe auf den Stift ${CORNER_NAMES[pts.length]}.`
     : 'Liegen die kleinen Punkte auf den Stiften? Sonst die Ecken etwas verschieben. Dann „Prüfen“.';
@@ -1409,7 +1461,7 @@ function renderCheckResult() {
   }
   el.innerHTML = `
     <div class="status warn">⚠ ${c.errors.length} ${c.errors.length === 1 ? 'mögliche Fehlerstelle' : 'mögliche Fehlerstellen'} · ${c.ok} richtig · ${c.missing} fehlen noch</div>
-    <p class="muted small">In der Platte rot markiert: Ring = falsche Farbe, Kreuz = hier gehört keine Perle hin. Tippe auf einen Eintrag, um zur Reihe zu springen.</p>
+    <p class="muted small">Im Foto rot eingekreist. In der Vorlage oben: Ring = falsche Farbe, Kreuz = hier gehört keine Perle hin. Tippe auf einen Eintrag, um zur Reihe zu springen.</p>
     ${unsure}
     <ul class="check-list"></ul>`;
   const list = $('.check-list', el);
@@ -1454,9 +1506,10 @@ async function init() {
         state.image = await loadImg(p.image);
         state.imageUrl = p.image;
         const { w, h } = patternSize();
-        const cells = sampleImage(state.image, state.crop, w, h);
         const colors = ownedColors().map((c) => ({ code: c.code, lab: rgbToLab(...hexToRgb(c.hex)) }));
-        if (colors.length && state.settings.mode === 'photo') state.lastPattern = { pat: buildPattern(cells, w, h, colors, state.settings), w, h };
+        if (colors.length && state.settings.mode === 'photo') {
+          state.lastPattern = { pat: imageToPattern(state.image, state.crop, w, h, colors, state.settings), w, h };
+        }
       } catch { /* Bild nicht mehr lesbar – Vorlage bleibt */ }
     }
   }

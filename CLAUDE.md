@@ -27,7 +27,7 @@ Im Desktop-App-Browser: `.claude/launch.json` → Konfiguration `perlenwerk`.
 | `js/main.js` | Zustand (`state`), Rendering der Schritte, alle Event-Handler |
 | `js/palette.js` | Hama-Midi-Standardfarben (Hex-Werte sind Näherungen, in der UI anpassbar) |
 | `js/color.js` | RGB→Lab, CIEDE2000 (`deltaE00`), Textfarbe für Kontrast |
-| `js/convert.js` | Bild → Zellen (`sampleImage`), fertige Vorlage auslesen (`findChart` sucht das Raster im ganzen Bild, `findGrid`/`period` für Lage und Feldgröße, `detectGrid` zählt Felder im Rahmen, `sampleChart` liest die Feldmitten), Zellen → Farbcodes (`buildPattern`, Hintergrund, Farbreduktion, Glätten) |
+| `js/convert.js` | Bild → Raster (`imageToPattern`/`patternFromPixels`: Mehrheitsfarbe je Feld, pixelgenauer Hintergrund), fertige Vorlage auslesen (`findChart` sucht das Raster im ganzen Bild, `findGrid`/`period` für Lage und Feldgröße, `detectGrid` zählt Felder im Rahmen, `sampleChart` liest die Feldmitten), Zellen → Farbcodes (`buildPattern`, Hintergrund, Farbreduktion, Glätten) |
 | `js/grid.js` | Reine Raster-Funktionen: Verbindungs-Check, Platzieren, Verschieben, Startperle, Reihen-Abschnitte |
 | `js/check.js` | Fortschritts-Check per Foto: Homographie aus 4 Ecken, Vergleich Foto ↔ Vorlage |
 | `js/render.js` | `drawBoard` – zeichnet Raster/Platten als Canvas (Lineale, Nähte, Markierungen) |
@@ -44,6 +44,9 @@ DOM-freie Logik (`grid.js`, `color.js`, `check.js`, `buildPattern`/`period` in `
 - **Startperle** = erste Perle in Leserichtung (oben → unten, links → rechts).
 - Die Vorlage liegt immer auf der vollen Baufläche, passt also per Konstruktion auf die Platten.
 - Fertig-Markierungen beim Bauen sind pro Platte gespeichert (`"platte:reihe"`), weil nebeneinanderliegende Platten dieselben Rasterzeilen teilen.
+
+- **Fotos/Bilder:** Jedes Feld bekommt die Perlenfarbe, die die meisten seiner Pixel haben – keine Durchschnittsfarbe, sonst entstehen an Kanten Mischtöne, die im Bild nicht vorkommen. Der Hintergrund wird pixelgenau vom Randstreifen aus entfernt (Bildrahmen werden so übersprungen).
+- Perlen werden immer mit dunklem Rand gezeichnet, damit Weiß/Creme auf der hellen Platte sichtbar bleiben.
 
 ## Bekannte Grenzen
 

@@ -27,7 +27,7 @@
     <section id="step-colors" class="step" hidden>
       <div class="intro">
         <h1>Deine Perlenfarben</h1>
-        <p>Hake an, welche Hama-Midi-Farben du zu Hause hast. Vorlagen werden nur aus diesen Farben gebaut.</p>
+        <p>Tippe die Hama-Midi-Farben an, die du zu Hause hast. Vorlagen werden nur aus diesen Farben gebaut.</p>
       </div>
       <div class="bar">
         <span id="owned-count" class="pill"></span>
@@ -36,7 +36,7 @@
         <button class="btn ghost" id="all-off">Keine</button>
       </div>
       <div id="color-list" class="color-list"></div>
-      <p class="hint">Die Farbtöne am Bildschirm sind Näherungen. Tippe auf einen Farbtupfer, um ihn an deine echten Perlen anzupassen – dann wird die Vorlage genauer.</p>
+      <p class="hint">Die Farbtöne am Bildschirm sind Näherungen. Sieht eine Farbe bei dir anders aus, tippe auf den Stift ✎ daneben und pass den Farbton an deine echten Perlen an – dann wird die Vorlage genauer.</p>
 
       <div class="card-row">
         <details class="card">
@@ -106,6 +106,12 @@
         </div>
       </div>
 
+      <div class="card" id="preview-card" hidden>
+        <h2>Vorschau</h2>
+        <div id="preview-wrap" class="preview-wrap"><canvas id="preview-canvas"></canvas></div>
+        <p class="muted" id="preview-info"></p>
+      </div>
+
       <div class="card" id="settings-card" hidden>
         <h2>Einstellungen</h2>
         <div class="settings">
@@ -150,12 +156,6 @@
           </label>
         </div>
       </div>
-
-      <div class="card" id="preview-card" hidden>
-        <h2>Vorschau</h2>
-        <div id="preview-wrap" class="preview-wrap"><canvas id="preview-canvas"></canvas></div>
-        <p class="muted" id="preview-info"></p>
-      </div>
       <div class="next"><button class="btn primary" data-go="pattern" id="to-pattern" disabled>Weiter zur Vorlage →</button></div>
     </section>
 
@@ -163,7 +163,7 @@
     <section id="step-pattern" class="step" hidden>
       <div class="intro">
         <h1>Vorlage bearbeiten</h1>
-        <p>Lösche Perlen, die du nicht willst, oder male Farben nach. Rot umrandete Perlen hängen nicht am Hauptstück.</p>
+        <p>Lösche Perlen, die du nicht willst, oder male Farben nach. Rot umrandete Perlen hängen nicht am Hauptstück. Vertan? Mit ↶ machst du jeden Schritt rückgängig.</p>
       </div>
       <div id="pattern-empty" class="empty card" hidden>
         <p>Noch keine Vorlage. Wähle zuerst ein Bild aus.</p>
@@ -177,7 +177,7 @@
           <div class="seg">
             <button data-tool="hand" title="Ansehen und scrollen">✋<span>Ansehen</span></button>
             <button data-tool="erase" title="Einzelne Perlen löschen">⌫<span>Radierer</span></button>
-            <button data-tool="wand" title="Zusammenhängende Fläche einer Farbe löschen">✦<span>Fläche löschen</span></button>
+            <button data-tool="wand" title="Zusammenhängende Fläche einer Farbe löschen">✦<span>Fläche</span></button>
             <button data-tool="pen" title="Perlen setzen">✎<span>Stift</span></button>
             <button data-tool="pick" title="Farbe aus der Vorlage aufnehmen">◉<span>Pipette</span></button>
           </div>
@@ -188,6 +188,15 @@
           <div class="seg small">
             <button id="zoom-out" title="Verkleinern">−</button>
             <button id="zoom-in" title="Vergrößern">+</button>
+          </div>
+        </div>
+        <p id="tool-hint" class="tool-hint"></p>
+        <div id="brush" class="brush" hidden>
+          <span>Pinselgröße</span>
+          <div class="seg small">
+            <button data-brush="0" title="eine Perle"><i style="--s:6px"></i><span>1</span></button>
+            <button data-brush="1" title="3 × 3 Perlen"><i style="--s:11px"></i><span>3</span></button>
+            <button data-brush="2" title="5 × 5 Perlen"><i style="--s:16px"></i><span>5</span></button>
           </div>
         </div>
         <div id="pen-colors" class="pen-colors" hidden></div>
