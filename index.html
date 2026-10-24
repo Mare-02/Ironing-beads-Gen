@@ -110,9 +110,23 @@
         <h2>Einstellungen</h2>
         <div class="settings">
           <div class="chart-fields chart-only">
-            <label class="field"><span>Perlen breit</span><input type="number" id="chart-cols" min="1" max="174" inputmode="numeric"></label>
-            <label class="field"><span>Perlen hoch</span><input type="number" id="chart-rows" min="1" max="174" inputmode="numeric"></label>
-            <button class="btn ghost" id="chart-detect">Raster erkennen</button>
+            <div class="field">
+              <span>Perlen breit</span>
+              <div class="num-stepper">
+                <button class="round" data-chart="cols" data-delta="-1" aria-label="eine Spalte weniger">−</button>
+                <input type="number" id="chart-cols" min="1" max="174" inputmode="numeric" aria-label="Perlen breit">
+                <button class="round" data-chart="cols" data-delta="1" aria-label="eine Spalte mehr">+</button>
+              </div>
+            </div>
+            <div class="field">
+              <span>Perlen hoch</span>
+              <div class="num-stepper">
+                <button class="round" data-chart="rows" data-delta="-1" aria-label="eine Reihe weniger">−</button>
+                <input type="number" id="chart-rows" min="1" max="174" inputmode="numeric" aria-label="Perlen hoch">
+                <button class="round" data-chart="rows" data-delta="1" aria-label="eine Reihe mehr">+</button>
+              </div>
+            </div>
+            <button class="btn ghost" id="chart-detect">Raster neu suchen</button>
           </div>
           <label class="field photo-only">
             <span>Größe <b id="size-out"></b></span>

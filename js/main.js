@@ -1,6 +1,6 @@
 import { HAMA_MIDI } from './palette.js';
 import { hexToRgb, rgbToLab } from './color.js';
-import { sampleImage, sampleChart, detectGrid, buildPattern } from './convert.js';
+import { sampleImage, sampleChart, detectGrid, findChart, buildPattern } from './convert.js';
 import * as G from './grid.js';
 import { drawBoard } from './render.js';
 import { homography, project, compare, median } from './check.js';
@@ -276,8 +276,8 @@ function renderImage() {
     ? 'Du hast schon eine Bügelperlen-Vorlage (z. B. aus dem Internet)? Die Seite liest das Raster aus und übersetzt die Farben in deine Perlen.'
     : 'Ein beliebiges Bild oder Foto wird in Perlen umgerechnet.';
   $('#crop-hint').textContent = chart
-    ? 'Zieh den Rahmen genau um das Raster der Vorlage (ohne Nummern und Farbliste). Die roten Linien zeigen, wie die Felder gelesen werden – sie sollten auf den Feldgrenzen liegen. Tipp: Sind leere Felder und Perlen beide weiß, schalte „Hintergrund entfernen“ aus und lösche den Rand in Schritt 3 mit „Fläche löschen“.'
-    : 'Zieh mit dem Finger einen Rahmen um dein Motiv – alles außerhalb wird weggeschnitten.';
+    ? 'Das Raster wird automatisch gesucht. Die roten Linien sollten auf den Feldgrenzen liegen. Wenn nicht: Ziehe an den Griffen am Rahmen (die Lupe hilft beim genauen Treffen) oder korrigiere die Anzahl mit − / +. Tipp: Sind leere Felder und Perlen beide weiß, schalte „Hintergrund entfernen“ aus und lösche den Rand in Schritt 3 mit „Fläche löschen“.'
+    : 'Zieh mit dem Finger einen Rahmen um dein Motiv oder pass ihn an den Griffen an – alles außerhalb wird weggeschnitten.';
 
   const has = !!state.image;
   $('#crop-area').hidden = !has;
@@ -396,35 +396,47 @@ $('#file').addEventListener('change', async (e) => {
   state.edited = false;
   state.crop = { x: 0, y: 0, w: 1, h: 1 };
   state.settings.width = 999;
-  autoDetectGrid();
+  locateChart();
   generate();
   render();
 });
 
-// Fertige Vorlage: Anzahl der Felder im Ausschnitt schätzen
-function autoDetectGrid(manual = false) {
+const clampCount = (n) => Math.max(1, Math.min(MAX_PLATES * PEG, n));
+
+// Fertige Vorlage: Raster im ganzen Bild suchen und Rahmen + Anzahl setzen
+function locateChart(manual = false) {
   if (state.settings.mode !== 'chart' || !state.image) return;
-  const g = detectGrid(state.image, state.crop);
-  if (!g) {
-    if (manual) toast('Kein Raster erkannt – trag die Anzahl der Perlen bitte selbst ein.');
+  const found = findChart(state.image);
+  if (found) {
+    state.crop = found.crop;
+    state.settings.cols = clampCount(found.cols);
+    state.settings.rows = clampCount(found.rows);
+    toast(`Raster gefunden: ${found.cols} × ${found.rows} Perlen. Liegen die roten Linien auf den Feldern?`);
     return;
   }
-  state.settings.cols = Math.min(MAX_PLATES * PEG, g.cols);
-  state.settings.rows = Math.min(MAX_PLATES * PEG, g.rows);
-  if (manual) toast(`Erkannt: ${g.cols} × ${g.rows} Perlen. Liegen die roten Linien richtig?`);
+  countChartCells();
+  if (manual) toast('Kein Raster gefunden – zieh den Rahmen bitte selbst um die Felder.');
+}
+
+// Anzahl der Felder innerhalb des aktuellen Rahmens schätzen
+function countChartCells() {
+  const g = detectGrid(state.image, state.crop);
+  if (!g) return;
+  state.settings.cols = clampCount(g.cols);
+  state.settings.rows = clampCount(g.rows);
 }
 
 $$('[data-mode]').forEach((b) => b.addEventListener('click', () => {
   if (state.settings.mode === b.dataset.mode) return;
   state.settings.mode = b.dataset.mode;
   state.settings.width = 999;
-  autoDetectGrid();
+  locateChart();
   generate();
   render();
 }));
 
 $('#chart-detect').addEventListener('click', () => {
-  autoDetectGrid(true);
+  locateChart(true);
   generate();
   render();
 });
@@ -442,11 +454,19 @@ for (const [id, key] of [['#chart-cols', 'cols'], ['#chart-rows', 'rows']]) {
   });
 }
 
-// Zuschneiden per Rahmen ziehen
+$$('[data-chart]').forEach((b) => b.addEventListener('click', () => {
+  const key = b.dataset.chart;
+  state.settings[key] = clampCount(state.settings[key] + Number(b.dataset.delta));
+  generate();
+  render();
+}));
+
+// Rahmen: neu aufziehen, verschieben oder an Ecken/Kanten anpassen
 const cropCanvas = $('#crop-canvas');
+const GRIP = 24; // Fangbereich der Griffe in CSS-Pixeln
 let cropDrag = null;
 
-function drawCrop(rect = state.crop) {
+function drawCrop(rect = state.crop, counts = state.settings, loupeAt = null) {
   const img = state.image;
   const maxW = $('#crop-wrap').clientWidth || 300;
   const maxH = Math.min(window.innerHeight * 0.5, 480);
@@ -474,9 +494,9 @@ function drawCrop(rect = state.crop) {
   ctx.rect(0, 0, cw, ch);
   ctx.rect(r.x, r.y, r.w, r.h);
   ctx.fill('evenodd');
-  if (state.settings.mode === 'chart' && !cropDrag) {
+  if (state.settings.mode === 'chart' && cropDrag?.mode !== 'new') {
     // Feldgrenzen, wie sie ausgelesen werden
-    const { cols, rows } = state.settings;
+    const { cols, rows } = counts;
     ctx.strokeStyle = 'rgba(232, 40, 30, 0.75)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -499,38 +519,134 @@ function drawCrop(rect = state.crop) {
   ctx.strokeStyle = '#e8604c';
   ctx.strokeRect(r.x, r.y, r.w, r.h);
   ctx.setLineDash([]);
+
+  // Griffe an Ecken und Kantenmitten
+  for (const [gx, gy] of [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5]]) {
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#e8604c';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(r.x + gx * r.w, r.y + gy * r.h, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  if (loupeAt) drawLoupe(ctx, loupeAt, cw, dpr);
 }
+
+// Lupe: zeigt vergrößert, was unter dem Finger liegt
+function drawLoupe(ctx, [px, py], cw, dpr) {
+  const R = 58, Z = 3;
+  const cx = px < cw / 2 ? cw - R - 8 : R + 8, cy = R + 8;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+  const src = (2 * R) / Z;
+  ctx.drawImage(cropCanvas, (px - src / 2) * dpr, (py - src / 2) * dpr, src * dpr, src * dpr, cx - R, cy - R, 2 * R, 2 * R);
+  ctx.restore();
+  ctx.strokeStyle = '#2b2622';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(43, 38, 34, 0.7)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - 10, cy);
+  ctx.lineTo(cx + 10, cy);
+  ctx.moveTo(cx, cy - 10);
+  ctx.lineTo(cx, cy + 10);
+  ctx.stroke();
+}
+
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
 function cropPoint(e) {
   const r = cropCanvas.getBoundingClientRect();
   return {
-    x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
-    y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)),
+    x: clamp01((e.clientX - r.left) / r.width),
+    y: clamp01((e.clientY - r.top) / r.height),
+    px: e.clientX - r.left,
+    py: e.clientY - r.top,
+    cw: r.width,
+    ch: r.height,
   };
 }
 
-function cropRect(a, b) {
-  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+// Was liegt unter dem Finger: ein Griff (resize), der Rahmen (move) oder nichts (new)?
+function cropHit(p) {
+  const c = state.crop;
+  const l = c.x * p.cw, t = c.y * p.ch, rr = (c.x + c.w) * p.cw, b = (c.y + c.h) * p.ch;
+  const inX = p.px > l - GRIP && p.px < rr + GRIP;
+  const inY = p.py > t - GRIP && p.py < b + GRIP;
+  const dl = Math.abs(p.px - l), dr = Math.abs(p.px - rr), dt = Math.abs(p.py - t), db = Math.abs(p.py - b);
+  const edges = {
+    l: inY && dl < GRIP && dl <= dr,
+    r: inY && dr < GRIP && dr < dl,
+    t: inX && dt < GRIP && dt <= db,
+    b: inX && db < GRIP && db < dt,
+  };
+  if (edges.l || edges.r || edges.t || edges.b) return { mode: 'resize', edges };
+  if (p.px > l && p.px < rr && p.py > t && p.py < b) return { mode: 'move' };
+  return { mode: 'new' };
+}
+
+function dragRect(d, p) {
+  const o = d.orig, dx = p.x - d.start.x, dy = p.y - d.start.y, min = 0.02;
+  if (d.mode === 'new') {
+    return { x: Math.min(d.start.x, p.x), y: Math.min(d.start.y, p.y), w: Math.abs(p.x - d.start.x), h: Math.abs(p.y - d.start.y) };
+  }
+  if (d.mode === 'move') {
+    return { ...o, x: Math.min(1 - o.w, Math.max(0, o.x + dx)), y: Math.min(1 - o.h, Math.max(0, o.y + dy)) };
+  }
+  let x0 = o.x, y0 = o.y, x1 = o.x + o.w, y1 = o.y + o.h;
+  if (d.edges.l) x0 = Math.min(x1 - min, clamp01(o.x + dx));
+  if (d.edges.r) x1 = Math.max(x0 + min, clamp01(o.x + o.w + dx));
+  if (d.edges.t) y0 = Math.min(y1 - min, clamp01(o.y + dy));
+  if (d.edges.b) y1 = Math.max(y0 + min, clamp01(o.y + o.h + dy));
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+// Beim Anpassen bleibt die Feldgröße gleich – größerer Rahmen = mehr Felder
+function dragCounts(d, rect) {
+  if (d.mode !== 'resize') return state.settings;
+  return {
+    cols: clampCount(Math.round(rect.w / (d.orig.w / state.settings.cols))),
+    rows: clampCount(Math.round(rect.h / (d.orig.h / state.settings.rows))),
+  };
 }
 
 cropCanvas.addEventListener('pointerdown', (e) => {
   cropCanvas.setPointerCapture(e.pointerId);
-  cropDrag = cropPoint(e);
+  const p = cropPoint(e);
+  cropDrag = { ...cropHit(p), start: p, orig: { ...state.crop } };
+  drawCrop(state.crop, state.settings, [p.px, p.py]);
 });
 cropCanvas.addEventListener('pointermove', (e) => {
-  if (cropDrag) drawCrop(cropRect(cropDrag, cropPoint(e)));
+  if (!cropDrag) return;
+  const p = cropPoint(e);
+  const rect = dragRect(cropDrag, p);
+  drawCrop(rect, dragCounts(cropDrag, rect), [p.px, p.py]);
 });
 cropCanvas.addEventListener('pointerup', (e) => {
   if (!cropDrag) return;
-  const r = cropRect(cropDrag, cropPoint(e));
+  const d = cropDrag;
+  const rect = dragRect(d, cropPoint(e));
+  const counts = dragCounts(d, rect);
   cropDrag = null;
-  if (r.w < 0.03 || r.h < 0.03) {
+  if (rect.w < 0.03 || rect.h < 0.03 || (d.mode === 'move' && rect.x === d.orig.x && rect.y === d.orig.y)) {
     drawCrop();
     return;
   }
-  state.crop = r;
+  state.crop = rect;
   state.settings.width = 999;
-  autoDetectGrid();
+  if (state.settings.mode === 'chart') {
+    if (d.mode === 'new') countChartCells();
+    else Object.assign(state.settings, { cols: counts.cols, rows: counts.rows });
+  }
   generate();
   render();
 });
@@ -539,7 +655,7 @@ cropCanvas.addEventListener('pointercancel', () => { cropDrag = null; drawCrop()
 $('#reset-crop').addEventListener('click', () => {
   state.crop = { x: 0, y: 0, w: 1, h: 1 };
   state.settings.width = 999;
-  autoDetectGrid();
+  if (state.settings.mode === 'chart') countChartCells();
   generate();
   render();
 });

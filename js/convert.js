@@ -74,37 +74,132 @@ export function sampleChart(img, crop, cols, rows) {
   return cells;
 }
 
-// Rasterweite einer Vorlage schätzen: Kanten wiederholen sich im Abstand eines Feldes
-export function detectGrid(img, crop) {
+const EDGE = 24; // Grauwert-Sprung, ab dem zwei Nachbarpixel als Kante zählen
+
+function grayImage(img, crop, maxSide) {
   const iw = (img.naturalWidth || img.width) * crop.w;
   const ih = (img.naturalHeight || img.height) * crop.h;
-  const s = Math.min(1, 1000 / Math.max(iw, ih));
+  const s = Math.min(1, maxSide / Math.max(iw, ih));
   const w = Math.max(8, Math.round(iw * s)), h = Math.max(8, Math.round(ih * s));
   const data = cropCanvas(img, crop, w, h);
   const gray = new Float32Array(w * h);
   for (let i = 0; i < w * h; i++) gray[i] = data[i * 4] * 0.3 + data[i * 4 + 1] * 0.59 + data[i * 4 + 2] * 0.11;
-  const px = new Float32Array(w - 1), py = new Float32Array(h - 1);
-  for (let y = 0; y < h - 1; y++) {
-    for (let x = 0; x < w - 1; x++) {
-      const g = gray[y * w + x];
-      px[x] += Math.abs(gray[y * w + x + 1] - g);
-      py[y] += Math.abs(gray[(y + 1) * w + x] - g);
-    }
+  return { gray, w, h };
+}
+
+// Anteil der Zeilen y0..y1, in denen zwischen x und x+1 eine Kante liegt.
+// Durchgehende Rasterlinien kommen auf fast 1, Schrift und Nummern bleiben niedrig.
+function edgeProfileX({ gray, w }, y0, y1) {
+  const p = new Float32Array(w - 1);
+  for (let y = y0; y < y1; y++) {
+    for (let x = 0; x < w - 1; x++) if (Math.abs(gray[y * w + x + 1] - gray[y * w + x]) > EDGE) p[x]++;
   }
-  const lx = period(px), ly = period(py);
+  return p.map((v) => v / Math.max(1, y1 - y0));
+}
+
+function edgeProfileY({ gray, w, h }, x0, x1) {
+  const p = new Float32Array(h - 1);
+  for (let y = 0; y < h - 1; y++) {
+    for (let x = x0; x < x1; x++) if (Math.abs(gray[(y + 1) * w + x] - gray[y * w + x]) > EDGE) p[y]++;
+  }
+  return p.map((v) => v / Math.max(1, x1 - x0));
+}
+
+// Anzahl der Felder in einem Ausschnitt, der genau das Raster umfasst
+export function detectGrid(img, crop) {
+  const g = grayImage(img, crop, 1000);
+  const lx = period(edgeProfileX(g, 0, g.h)), ly = period(edgeProfileY(g, 0, g.w));
   const pitch = lx && ly ? (lx + ly) / 2 : lx || ly;
   if (!pitch) return null;
-  return { cols: Math.max(1, Math.round(w / (lx || pitch))), rows: Math.max(1, Math.round(h / (ly || pitch))) };
+  return { cols: Math.max(1, Math.round(g.w / (lx || pitch))), rows: Math.max(1, Math.round(g.h / (ly || pitch))) };
+}
+
+// Fertige Vorlage im ganzen Bild finden: Rasterweite, Lage und Anzahl der Felder.
+// Titel, Randnummern und Farblegende liegen außerhalb des längsten Linienzugs.
+export function findChart(img) {
+  const g = grayImage(img, { x: 0, y: 0, w: 1, h: 1 }, 1200);
+  let yr = [0, g.h], gx = null, gy = null;
+  for (let pass = 0; pass < 2; pass++) {
+    const px = edgeProfileX(g, yr[0], yr[1]);
+    const pitchX = period(px);
+    if (!pitchX) return null;
+    gx = findGrid(px, pitchX);
+    const xr = [Math.max(0, Math.floor(gx.start)), Math.min(g.w, Math.ceil(gx.end) + 2)];
+    const py = edgeProfileY(g, xr[0], xr[1]);
+    const pitchY = period(py);
+    if (!pitchY) return null;
+    gy = findGrid(py, pitchY);
+    yr = [Math.max(0, Math.floor(gy.start)), Math.min(g.h, Math.ceil(gy.end) + 2)];
+  }
+  if (gx.count < 2 || gy.count < 2) return null;
+  // Profilindex i ist die Kante zwischen Pixel i und i+1, liegt also bei i + 1
+  const x0 = gx.start + 1, x1 = gx.end + 1, y0 = gy.start + 1, y1 = gy.end + 1;
+  return {
+    crop: { x: x0 / g.w, y: y0 / g.h, w: (x1 - x0) / g.w, h: (y1 - y0) / g.h },
+    cols: gx.count,
+    rows: gy.count,
+  };
+}
+
+// Lage der Rasterlinien bei ungefähr bekannter Rasterweite: Feldgröße (±6 %) und Phase
+// mit der stärksten mittleren Kantenstärke, dann der längste Zug deutlicher Linien.
+// Schon 2 % Fehler in der Feldgröße lassen das Raster über 40 Felder auseinanderlaufen.
+export function findGrid(profile, roughPitch) {
+  const sm = smoothProfile(profile);
+  const n = sm.length;
+  const at = (x) => {
+    const i = Math.floor(x), f = x - i;
+    return i < 0 || i >= n - 1 ? 0 : sm[i] * (1 - f) + sm[i + 1] * f;
+  };
+  let off = 0, pitch = roughPitch, best = -1;
+  for (let p = roughPitch * 0.94; p <= roughPitch * 1.06; p += roughPitch * 0.002) {
+    for (let o = 0; o < p; o += 0.25) {
+      let s = 0, k = 0;
+      for (let x = o; x < n; x += p, k++) s += at(x);
+      if (s / k > best) { best = s / k; off = o; pitch = p; }
+    }
+  }
+  // Linienstärke mit etwas Spielraum messen: gerenderte Linien springen um ±1 px
+  const slack = Math.max(1.5, pitch * 0.08);
+  const lines = [];
+  for (let x = off; x < n; x += pitch) {
+    let m = 0;
+    for (let i = Math.ceil(x - slack); i <= x + slack; i++) if (i >= 0 && i < n) m = Math.max(m, sm[i]);
+    lines.push(m);
+  }
+  const strong = [...lines].sort((a, b) => b - a).slice(0, Math.max(2, lines.length >> 1));
+  const threshold = 0.45 * strong[strong.length >> 1];
+  const ok = lines.map((v) => v >= threshold && v > 0);
+  // Einzelne schwache Linie zwischen zwei starken ist eine Lücke im Bild, kein Rasterende
+  for (let k = 1; k < ok.length - 1; k++) if (!ok[k] && ok[k - 1] && ok[k + 1] && lines[k] > 0) ok[k] = true;
+  let runStart = 0, runLen = 0;
+  for (let k = 0, s = -1; k < ok.length; k++) {
+    if (!ok[k]) { s = -1; continue; }
+    if (s < 0) s = k;
+    if (k - s + 1 > runLen) { runLen = k - s + 1; runStart = s; }
+  }
+  return {
+    start: off + runStart * pitch,
+    end: off + (runStart + runLen - 1) * pitch,
+    count: Math.max(0, runLen - 1),
+    pitch,
+  };
+}
+
+// Leicht weichzeichnen, damit Linien bei krummen Abständen (12/13/12 px) zusammenfallen
+function smoothProfile(profile) {
+  const n = profile.length;
+  let sm = Array.from(profile);
+  for (let pass = 0; pass < 2; pass++) {
+    sm = sm.map((x, i) => (sm[Math.max(0, i - 1)] + 2 * x + sm[Math.min(n - 1, i + 1)]) / 4);
+  }
+  return sm;
 }
 
 // Grundperiode eines Profils per Autokorrelation (kleinster deutlicher Gipfel)
 export function period(profile) {
   const n = profile.length;
-  // Leicht weichzeichnen, damit Linien bei krummen Abständen (12/13/12 px) zusammenfallen
-  let sm = Array.from(profile);
-  for (let pass = 0; pass < 2; pass++) {
-    sm = sm.map((x, i) => (sm[Math.max(0, i - 1)] + 2 * x + sm[Math.min(n - 1, i + 1)]) / 4);
-  }
+  const sm = smoothProfile(profile);
   const mean = sm.reduce((s, v) => s + v, 0) / n;
   const v = sm.map((x) => x - mean);
   const maxLag = Math.floor(n / 3);

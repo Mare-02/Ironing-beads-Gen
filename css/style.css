@@ -251,7 +251,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; }
 .mode-seg { display: inline-flex; margin-bottom: 8px; }
 .mode-seg button { font-size: 0.92rem; font-weight: 600; }
 .chart-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
-.chart-fields input { width: 96px; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
+.num-stepper { display: flex; align-items: center; gap: 6px; }
+.chart-fields input { width: 72px; text-align: center; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
 body[data-mode="photo"] .chart-only, body[data-mode="chart"] .photo-only { display: none !important; }
 #crop-canvas { display: block; max-width: 100%; touch-action: none; border-radius: 8px; cursor: crosshair; }
 .preview-wrap { overflow: auto; }

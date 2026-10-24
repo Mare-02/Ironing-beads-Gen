@@ -27,7 +27,7 @@ Im Desktop-App-Browser: `.claude/launch.json` → Konfiguration `perlenwerk`.
 | `js/main.js` | Zustand (`state`), Rendering der Schritte, alle Event-Handler |
 | `js/palette.js` | Hama-Midi-Standardfarben (Hex-Werte sind Näherungen, in der UI anpassbar) |
 | `js/color.js` | RGB→Lab, CIEDE2000 (`deltaE00`), Textfarbe für Kontrast |
-| `js/convert.js` | Bild → Zellen (`sampleImage`), fertige Vorlage auslesen (`sampleChart`, `detectGrid`, `period`), Zellen → Farbcodes (`buildPattern`, Hintergrund, Farbreduktion, Glätten) |
+| `js/convert.js` | Bild → Zellen (`sampleImage`), fertige Vorlage auslesen (`findChart` sucht das Raster im ganzen Bild, `findGrid`/`period` für Lage und Feldgröße, `detectGrid` zählt Felder im Rahmen, `sampleChart` liest die Feldmitten), Zellen → Farbcodes (`buildPattern`, Hintergrund, Farbreduktion, Glätten) |
 | `js/grid.js` | Reine Raster-Funktionen: Verbindungs-Check, Platzieren, Verschieben, Startperle, Reihen-Abschnitte |
 | `js/check.js` | Fortschritts-Check per Foto: Homographie aus 4 Ecken, Vergleich Foto ↔ Vorlage |
 | `js/render.js` | `drawBoard` – zeichnet Raster/Platten als Canvas (Lineale, Nähte, Markierungen) |

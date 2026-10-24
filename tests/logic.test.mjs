@@ -1,7 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as G from '../js/grid.js';
-import { buildPattern, period } from '../js/convert.js';
+import { buildPattern, period, findGrid } from '../js/convert.js';
+
+test('findGrid findet Lage und Anzahl der Felder trotz Schrift am Rand', () => {
+  // 20 Felder à 12.5 px ab x = 40, Linien um ±1 px versetzt wie in verkleinerten Bildern,
+  // davor und danach schwache „Schrift“-Kanten
+  const n = 400;
+  const profile = new Float32Array(n);
+  for (let k = 0; k <= 20; k++) {
+    const x = 40 + k * 12.5 + Math.round(Math.sin(k * k * 1.7));
+    profile[Math.floor(x)] += 0.6;
+    profile[Math.ceil(x)] += 0.4;
+  }
+  for (let x = 0; x < 30; x += 3) profile[x] += 0.12;
+  for (let x = 300; x < n; x += 4) profile[x] += 0.15;
+  const g = findGrid(profile, period(profile));
+  assert.equal(g.count, 20);
+  assert.ok(Math.abs(g.start - 40) < 1.5, `start ${g.start}`);
+  assert.ok(Math.abs(g.end - 290) < 1.5, `end ${g.end}`);
+});
 
 test('Rasterweite einer Vorlage wird aus dem Kantenprofil erkannt', () => {
   // Rasterlinie alle 12.5 px, dazu etwas Rauschen von aufgedruckten Nummern
